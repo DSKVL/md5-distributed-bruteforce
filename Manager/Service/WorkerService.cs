@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
-using Manager.Contracts.DTO;
-using Manager.Model;
+using HashCrack.Contracts.DTO;
+using HashCrack.Manager.Model;
+using HashCrack.Model;
 
 namespace Manager.Service;
 
 public class WorkerService
 {
+    private readonly char[] _alphabet;
     private readonly uint _alphabetSize;
     private readonly uint _maxLength;
     private readonly ulong[] _powerTable;
@@ -17,6 +19,7 @@ public class WorkerService
     {
         _httpClients.Add(httpClientFactory.CreateClient());
         _maxLength = uint.Parse(configuration["MaxLength"]);
+        _alphabet = configuration["Alphabet"].ToCharArray();
         _alphabetSize = (uint)configuration["Alphabet"].Length;
         _powerTable = new ulong[_maxLength + 1];
         _powerTable[0] = 1;
@@ -36,14 +39,27 @@ public class WorkerService
         {
             await httpClient.PostAsync("/internal/api/manager/hash/crack/request",
                 JsonContent.Create(new CrackWorkerTaskDto(
+                    workerCrackTask.workerId,
                     workerCrackTask.Status,
                     workerCrackTask.Hash,
                     workerCrackTask.Offset,
                     workerCrackTask.SendCount,
-                    workerCrackTask.MaxLength)));
+                    workerCrackTask.MaxLength,
+                    workerCrackTask.Alphabet.ToString()
+                )));
         }
 
         return task.Id.ToString();
+    }
+
+    public (Status, string[]) CheckStatus(Guid taskId)
+    {
+        //TODO
+    }
+
+    public void UpdateTask(Status receivedStatus, string receivedData)
+    {
+        //TODO
     }
 
     private List<WorkerCrackTask> GetWorkerTasks(string targetHash, uint maxSourceLength, int workerCount)
@@ -60,7 +76,12 @@ public class WorkerService
             Hash = targetHash,
             MaxLength = _maxLength,
             Offset = tuple.First,
-            SendCount = tuple.Second
+            SendCount = tuple.Second,
+            Alphabet = _alphabet
+        }).Select((task, idx) =>
+        {
+            task.workerId = idx;
+            return task;
         }).ToList();
     }
 

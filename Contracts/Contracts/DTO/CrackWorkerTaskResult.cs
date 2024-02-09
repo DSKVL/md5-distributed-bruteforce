@@ -1,3 +1,3 @@
-namespace Manager.Contracts.DTO;
+namespace HashCrack.vContracts.DTO;
 
 public record CrackWorkerTaskResult();

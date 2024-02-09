@@ -1,4 +1,4 @@
-namespace Manager.Model;
+namespace HashCrack.Model;
 
 public enum Status
 {

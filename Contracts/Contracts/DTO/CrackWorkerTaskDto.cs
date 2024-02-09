@@ -1,13 +1,17 @@
 using System.Text.Json.Serialization;
-using Manager.Model;
+using HashCrack.Model;
 
-namespace Manager.Contracts.DTO;
+namespace HashCrack.Contracts.DTO;
 
 public record CrackWorkerTaskDto(
+    [property: JsonPropertyName("workerId")]
+    int workerId,
     [property: JsonPropertyName("status")] Status Status,
     [property: JsonPropertyName("hash")] string? Hash,
     [property: JsonPropertyName("offset")] ulong Offset,
     [property: JsonPropertyName("sendCount")]
     ulong SendCount,
     [property: JsonPropertyName("maxLength")]
-    uint MaxLength);
+    uint MaxLength,
+    [property: JsonPropertyName("alphabet")]
+    string Alphabet);
