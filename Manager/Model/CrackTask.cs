@@ -1,4 +1,6 @@
-namespace Manager.Model;
+using HashCrack.Model;
+
+namespace HashCrack.Manager.Model;
 
 public class CrackTask
 {

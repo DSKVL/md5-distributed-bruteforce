@@ -5,13 +5,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace HashCrack.Manager.Controllers;
 
 [ApiController]
-[Route("/api/hash/crack")]
-public class CrackController : ControllerBase
+[Route("/api/hash/status")]
+public class StatusController : ControllerBase
 {
+    private readonly ILogger<StatusController> _logger;
     private readonly WorkerService _workerService;
 
-    public CrackController(WorkerService workerService)
+    public StatusController(ILogger<StatusController> logger,
+        WorkerService workerService)
     {
+        _logger = logger;
         _workerService = workerService;
     }
 
