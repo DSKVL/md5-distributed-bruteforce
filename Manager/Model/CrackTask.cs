@@ -1,10 +1,11 @@
-using HashCrack.Model;
+using HashCrack.Enums;
 
-namespace HashCrack.Manager.Model;
+namespace Manager.Model;
 
 public class CrackTask
 {
-    public Status Status { get; set; } = Status.IN_PROGRESS;
+    public readonly IList<string> HashSources = new List<string>();
+    public Status Status { get; set; } = Status.InProgress;
     public Guid Id { get; set; } = Guid.NewGuid();
-    public ICollection<WorkerCrackTask> WorkerTasks { get; set; } = new List<WorkerCrackTask>();
+    public IList<WorkerCrackTask> WorkerTasks { get; init; } = new List<WorkerCrackTask>();
 }

@@ -1,21 +1,28 @@
 using System.Security.Cryptography;
 using Combinatorics.Collections;
-using Contracts.Contracts.DTO;
-using HashCrack.Model;
+using HashCrack.Contracts.DTO;
+using HashCrack.Enums;
 
-namespace Worker.Service;
+namespace HashCrack.Worker.Service;
 
 using VariationsEnumerator = IEnumerable<IReadOnlyList<char>>;
 
 public class Worker
 {
+    private readonly ILogger<Worker> _logger;
     private readonly HttpClient _managerHttpClient;
-    private readonly WorkerCrackTask _task;
 
-    public Worker(WorkerCrackTask task,
-        HttpClient managerHttpClient)
+    private WorkerCrackTask _task = new()
     {
-        _task = task;
+        MaxLength = 0,
+        Alphabet = Array.Empty<char>()
+    };
+
+    private Guid _taskId;
+
+    public Worker(ILogger<Worker> logger, HttpClient managerHttpClient)
+    {
+        _logger = logger;
         _managerHttpClient = managerHttpClient;
     }
 
@@ -27,41 +34,46 @@ public class Worker
         .Skip((int)_task.Offset)
         .Take((int)_task.SendCount);
 
-    public async Task Crack()
+    public async Task Crack(WorkerCrackTask task, Guid taskId)
     {
-        await Parallel.ForEachAsync(RequestedStringsEnumerator, (variation, _) =>
+        _task = task;
+        _taskId = taskId;
+        _logger.LogInformation(
+            "Started processing hash {ProcessedHash} with task offset {TaskOffset} and count {TaskCount}",
+            task.Hash, task.Offset, task.SendCount);
+        foreach (var variation in RequestedStringsEnumerator)
         {
-            if (CheckHashMatch(CalculateHash(variation)))
-            {
-                SendMatchedString(variation.ToString());
-            }
+            var checkedWord = string.Concat(variation);
+            _logger.LogInformation("Checking string \"{CheckedString}\"", checkedWord);
+            if (!CheckHashMatch(CalculateHash(variation))) continue;
+            _logger.LogInformation("Found matching string \"{MatchedString}\" with hash {ProcessedHash}",
+                checkedWord,
+                task.Hash);
+            SendMatchedString(checkedWord);
+        }
 
-            return ValueTask.CompletedTask;
-        });
-        await _managerHttpClient.SendAsync(new HttpRequestMessage()
-        {
-            Method = HttpMethod.Post,
-            Content = JsonContent.Create(new WorkerTaskCompletionDto(
-                _task.workerId,
-                Status.READY))
-        });
+        _logger.LogInformation("Finished processing hash: {ProcessedHash}", task.Hash);
+        await _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
+            JsonContent.Create(new CrackWorkerTaskCompletionDto(
+                _task.WorkerId,
+                Status.Ready)));
     }
 
     private bool CheckHashMatch(string hash) => _task.Hash == hash;
 
-    private string CalculateHash(IReadOnlyList<char> word)
-        => MD5.HashData(word.Select(Convert.ToByte).ToArray()).ToString() ?? "";
+    private static string CalculateHash(IReadOnlyList<char> word)
+    {
+        var byteArray = word.Select(Convert.ToByte).ToArray();
+        var hash = MD5.HashData(byteArray);
+        return HashToString(hash);
+    }
+
+    private static string HashToString(byte[] bytes) => string.Concat(bytes.Select(b => b.ToString("X2").ToLower()));
 
     private void SendMatchedString(string? matchedWord)
-    {
-        _managerHttpClient.SendAsync(new HttpRequestMessage()
-        {
-            Method = HttpMethod.Post,
-            Content = JsonContent.Create(new WorkerTaskCompletionDto(
-                _task.workerId,
-                matchedWord != null ? Status.IN_PROGRESS : Status.ERROR,
-                matchedWord ?? "An error occured"
-            ))
-        });
-    }
+        => _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
+            JsonContent.Create(new CrackWorkerTaskCompletionDto(
+                _task.WorkerId,
+                matchedWord != null ? Status.InProgress : Status.Error,
+                matchedWord ?? "An error occured")));
 }
