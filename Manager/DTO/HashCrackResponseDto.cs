@@ -1,3 +1,3 @@
-namespace HashCrack.Manager.DTO;
+namespace Manager.DTO;
 
-public record HashCrackResponseDto(string requestId);
+public record HashCrackResponseDto(string RequestId);

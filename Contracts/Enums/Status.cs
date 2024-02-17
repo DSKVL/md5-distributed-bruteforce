@@ -1,8 +1,11 @@
-namespace HashCrack.Model;
+using System.Text.Json.Serialization;
 
+namespace HashCrack.Enums;
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum Status
 {
-    ERROR = -1,
-    IN_PROGRESS,
-    READY,
+    Error = -1,
+    InProgress,
+    Ready,
 }

@@ -1,0 +1,31 @@
+version: "3.9"
+networks:
+  hash-crack-dev:
+    driver: bridge
+services:
+  manager:
+    container_name: hash-crack-manager
+    build: 
+      context: .
+      dockerfile: Manager/Dockerfile
+    environment:
+      WORKER_HOSTNAME_PREFIX: md5-distributed-bruteforce-worker-
+      WORKER_COUNT: 3
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "8080:8080"
+    networks:
+     - hash-crack-dev
+  worker:
+    build:
+      context: .
+      dockerfile: Worker/Dockerfile
+    networks:
+     - hash-crack-dev
+    deploy:
+      mode: replicated
+      replicas: 3
+      endpoint_mode: vip
+    environment:
+      MANAGER_HOSTNAME: hash-crack-manager
+      ASPNETCORE_ENVIRONMENT: Development

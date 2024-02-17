@@ -1,3 +1,3 @@
-namespace HashCrack.Manager.DTO;
+namespace Manager.DTO;
 
-public record HashCrackRequestDto(string hash, uint maxLength);
+public record HashCrackRequestDto(string Hash, uint MaxLength);

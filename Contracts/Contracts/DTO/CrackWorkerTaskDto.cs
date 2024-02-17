@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
-using HashCrack.Model;
+using HashCrack.Enums;
 
 namespace HashCrack.Contracts.DTO;
 
 public record CrackWorkerTaskDto(
     [property: JsonPropertyName("workerId")]
-    int workerId,
+    int WorkerId,
     [property: JsonPropertyName("status")] Status Status,
     [property: JsonPropertyName("hash")] string? Hash,
     [property: JsonPropertyName("offset")] ulong Offset,
