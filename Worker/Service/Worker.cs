@@ -1,16 +1,13 @@
 using System.Security.Cryptography;
 using Combinatorics.Collections;
-using HashCrack.Contracts.DTO;
-using HashCrack.Enums;
+using HashCrack.Contracts;
+using HashCrack.Contracts.Model;
 
 namespace HashCrack.Worker.Service;
-
-using VariationsEnumerator = IEnumerable<IReadOnlyList<char>>;
 
 public class Worker
 {
     private readonly ILogger<Worker> _logger;
-    private readonly HttpClient _managerHttpClient;
 
     private WorkerCrackTask _task = new()
     {
@@ -18,50 +15,61 @@ public class Worker
         Alphabet = Array.Empty<char>()
     };
 
-    private Guid _taskId;
-
-    public Worker(ILogger<Worker> logger, HttpClient managerHttpClient)
+    public Worker(ILogger<Worker> logger)
     {
         _logger = logger;
-        _managerHttpClient = managerHttpClient;
     }
 
-    private VariationsEnumerator RequestedStringsEnumerator => Enumerable
+    private IEnumerable<string> RequestedWordsEnumerator => Enumerable
         .Range(1, (int)_task.MaxLength)
         .Select(lowerIndex => new Variations<char>(_task.Alphabet, lowerIndex, GenerateOption.WithRepetition))
         .Aggregate(Enumerable.Empty<IReadOnlyList<char>>(),
             (accumulatorEnumerable, enumerable) => accumulatorEnumerable.Concat(enumerable))
         .Skip((int)_task.Offset)
-        .Take((int)_task.SendCount);
+        .Take((int)_task.SendCount)
+        .Select(variation => string.Concat(variation));
 
-    public async Task Crack(WorkerCrackTask task, Guid taskId)
+    public IEnumerable<WorkerJobResult> Crack(WorkerJob job)
     {
-        _task = task;
-        _taskId = taskId;
+        _task = JobToTask(job);
         _logger.LogInformation(
             "Started processing hash {ProcessedHash} with task offset {TaskOffset} and count {TaskCount}",
-            task.Hash, task.Offset, task.SendCount);
-        foreach (var variation in RequestedStringsEnumerator)
+            _task.Hash, _task.Offset, _task.SendCount);
+
+        foreach (var word in RequestedWordsEnumerator)
         {
-            var checkedWord = string.Concat(variation);
-            _logger.LogInformation("Checking string \"{CheckedString}\"", checkedWord);
-            if (!CheckHashMatch(CalculateHash(variation))) continue;
+            _logger.LogTrace("Checking string \"{CheckedString}\"",
+                word);
+
+            var hash = CalculateHash(word);
+            if (!CheckHashMatch(hash)) continue;
+
             _logger.LogInformation("Found matching string \"{MatchedString}\" with hash {ProcessedHash}",
-                checkedWord,
-                task.Hash);
-            SendMatchedString(checkedWord);
+                word,
+                _task.Hash);
+
+            yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.InProgress, word);
         }
 
-        _logger.LogInformation("Finished processing hash: {ProcessedHash}", task.Hash);
-        await _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
-            JsonContent.Create(new CrackWorkerTaskCompletionDto(
-                _task.WorkerId,
-                Status.Ready)));
+        _logger.LogInformation("Finished processing hash: {ProcessedHash}", _task.Hash);
+
+        yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.Ready);
     }
+
+    private static WorkerCrackTask JobToTask(WorkerJob job) => new()
+    {
+        WorkerId = job.WorkerId,
+        Status = job.Status,
+        Hash = job.Hash,
+        Offset = job.Offset,
+        SendCount = job.SendCount,
+        MaxLength = job.MaxLength,
+        Alphabet = job.Alphabet,
+    };
 
     private bool CheckHashMatch(string hash) => _task.Hash == hash;
 
-    private static string CalculateHash(IReadOnlyList<char> word)
+    private static string CalculateHash(string word)
     {
         var byteArray = word.Select(Convert.ToByte).ToArray();
         var hash = MD5.HashData(byteArray);
@@ -69,11 +77,4 @@ public class Worker
     }
 
     private static string HashToString(byte[] bytes) => string.Concat(bytes.Select(b => b.ToString("X2").ToLower()));
-
-    private void SendMatchedString(string? matchedWord)
-        => _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
-            JsonContent.Create(new CrackWorkerTaskCompletionDto(
-                _task.WorkerId,
-                matchedWord != null ? Status.InProgress : Status.Error,
-                matchedWord ?? "An error occured")));
 }

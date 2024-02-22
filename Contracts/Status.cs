@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace HashCrack.Enums;
+namespace HashCrack.Contracts;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum Status
