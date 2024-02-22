@@ -1,13 +1,13 @@
 using System.Security.Cryptography;
 using Combinatorics.Collections;
-using HashCrack.Contracts;
-using HashCrack.Contracts.Model;
+using HashCrack.Components.Model;
+using Microsoft.Extensions.Logging;
 
-namespace HashCrack.Worker.Service;
+namespace HashCrack.Components.Service;
 
-public class Worker
+public class WorkerService
 {
-    private readonly ILogger<Worker> _logger;
+    private readonly ILogger<WorkerService> _logger;
 
     private WorkerCrackTask _task = new()
     {
@@ -15,7 +15,7 @@ public class Worker
         Alphabet = Array.Empty<char>()
     };
 
-    public Worker(ILogger<Worker> logger)
+    public WorkerService(ILogger<WorkerService> logger)
     {
         _logger = logger;
     }
@@ -48,18 +48,17 @@ public class Worker
                 word,
                 _task.Hash);
 
-            yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.InProgress, word);
+            yield return new WorkerJobResult(job.RequestGuid, _task.JobId, Status.InProgress, word);
         }
 
         _logger.LogInformation("Finished processing hash: {ProcessedHash}", _task.Hash);
 
-        yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.Ready);
+        yield return new WorkerJobResult(job.RequestGuid, _task.JobId, Status.Ready);
     }
 
     private static WorkerCrackTask JobToTask(WorkerJob job) => new()
     {
-        WorkerId = job.WorkerId,
-        Status = job.Status,
+        JobId = job.JobId,
         Hash = job.Hash,
         Offset = job.Offset,
         SendCount = job.SendCount,

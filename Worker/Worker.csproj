@@ -10,24 +10,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Combinatorics" Version="2.0.0"/>
-        <PackageReference Include="MassTransit" Version="8.1.3"/>
-        <PackageReference Include="MassTransit.AspNetCore" Version="7.3.1"/>
-        <PackageReference Include="MassTransit.MongoDb" Version="8.1.3"/>
-        <PackageReference Include="MassTransit.RabbitMQ" Version="8.1.3"/>
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.1"/>
-        <PackageReference Include="MongoDb.Driver" Version="2.23.1"/>
-        <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0"/>
+        <ProjectReference Include="..\Components\Components.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Contracts\Contracts.csproj"/>
-    </ItemGroup>
-
-    <ItemGroup>
-        <Content Include="..\.dockerignore">
-            <Link>.dockerignore</Link>
-        </Content>
+        <PackageReference Include="MassTransit" Version="8.2.0"/>
     </ItemGroup>
 
 </Project>
