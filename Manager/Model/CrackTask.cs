@@ -1,6 +1,7 @@
-using HashCrack.Enums;
+using HashCrack.Contracts;
+using HashCrack.Contracts.Model;
 
-namespace Manager.Model;
+namespace HashCrack.Manager.Model;
 
 public class CrackTask
 {

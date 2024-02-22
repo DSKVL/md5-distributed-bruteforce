@@ -16,12 +16,18 @@ services:
       - "8080:8080"
     networks:
      - hash-crack-dev
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
   worker:
     build:
       context: .
       dockerfile: Worker/Dockerfile
     networks:
      - hash-crack-dev
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     deploy:
       mode: replicated
       replicas: 3
@@ -29,3 +35,17 @@ services:
     environment:
       MANAGER_HOSTNAME: hash-crack-manager
       ASPNETCORE_ENVIRONMENT: Development
+  rabbitmq:
+    container_name: "hash-crack-rabbitmq"
+    image: masstransit/rabbitmq:latest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      # "test: rabbitmq-diagnostics check_port_connectivity" does not work with masstransit/rabbitmq
+      test: [ "CMD", "rabbitmqctl", "status" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    networks:
+      - hash-crack-dev

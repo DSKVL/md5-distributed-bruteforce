@@ -1,9 +1,9 @@
 using System.Text.Json.Serialization;
-using HashCrack.Enums;
 
-namespace HashCrack.Contracts.DTO;
+namespace HashCrack.Contracts;
 
-public record CrackWorkerTaskDto(
+public record WorkerJob(
+    [property: JsonPropertyName("guid")] string Guid,
     [property: JsonPropertyName("workerId")]
     int WorkerId,
     [property: JsonPropertyName("status")] Status Status,

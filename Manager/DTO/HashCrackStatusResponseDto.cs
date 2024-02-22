@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using HashCrack.Enums;
+using HashCrack.Contracts;
 
-namespace Manager.DTO;
+namespace HashCrack.Manager.DTO;
 
 public record CrackStatusResponseDto(
     [property: JsonPropertyName("status")] Status status,
