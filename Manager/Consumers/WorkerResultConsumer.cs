@@ -18,7 +18,7 @@ public class WorkerResultConsumer : IConsumer<WorkerJobResult>
         var message = context.Message;
         _workerService.UpdateTask(
             Guid.Parse(message.Guid),
-            message.WorkerId,
+            message.JobId,
             message.Status,
             message.Data);
     }

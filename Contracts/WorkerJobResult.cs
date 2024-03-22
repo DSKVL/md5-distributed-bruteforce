@@ -2,6 +2,6 @@ namespace HashCrack.Contracts;
 
 public record WorkerJobResult(
     string Guid,
-    int WorkerId,
+    Guid JobId,
     Status Status,
     string? Data = null);

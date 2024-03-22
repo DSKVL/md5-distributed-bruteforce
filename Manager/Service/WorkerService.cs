@@ -11,7 +11,7 @@ public class WorkerService
     private readonly char[] _alphabet;
     private readonly ILogger<WorkerService> _logger;
     private readonly uint _maxLength;
-    private readonly ulong[] _powerTable;
+    private readonly long[] _powerTable;
     private readonly IDictionary<Guid, CrackTask> _tasks = new ConcurrentDictionary<Guid, CrackTask>();
     private readonly int _timeout;
     private readonly int _workerCount;
@@ -28,9 +28,9 @@ public class WorkerService
         _powerTable = FillPowerTable(_maxLength, (uint)_alphabet.Length);
     }
 
-    private static ulong[] FillPowerTable(uint length, ulong b)
+    private static long[] FillPowerTable(uint length, long b)
     {
-        var powerTable = new ulong[length + 1];
+        var powerTable = new long[length + 1];
         powerTable[0] = 1;
         for (var i = 1; i <= length; i++)
         {
@@ -48,7 +48,9 @@ public class WorkerService
         _tasks.Add(task.Id, task);
         var sendEndpoint = await sendEndpointProvider.GetSendEndpoint(new Uri("queue:worker-job"));
 
-        foreach (var workerCrackTask in workerTasks)
+        //Транзакция на 3 джобы, чтобы не утекли кусочки задания
+
+        foreach (var (_, workerCrackTask) in workerTasks)
         {
             _logger.LogInformation("Send job request with task offset {TaskOffset} and count {SendCount}",
                 workerCrackTask.Offset,
@@ -56,7 +58,7 @@ public class WorkerService
 
             await sendEndpoint.Send(new WorkerJob(
                 task.Id.ToString(),
-                workerCrackTask.WorkerId,
+                workerCrackTask.JobId,
                 workerCrackTask.Status,
                 workerCrackTask.Hash,
                 workerCrackTask.Offset,
@@ -68,6 +70,14 @@ public class WorkerService
         SetTimeout(task, _timeout);
 
         return task.Id.ToString();
+    }
+
+    private void SubmitJob(WorkerCrackTask task)
+    {
+        //Лог
+        //БД
+        //Лог
+        //Send
     }
 
     private void SetTimeout(CrackTask task, int timeout)
@@ -87,13 +97,13 @@ public class WorkerService
         => (_tasks[taskId].Status,
             _tasks[taskId].HashSources.ToArray());
 
-    public void UpdateTask(Guid taskId, int workerId, Status receivedStatus, string? receivedData)
+    public void UpdateTask(Guid taskId, Guid jobId, Status receivedStatus, string? receivedData)
     {
         _logger.LogInformation("Received result with state {ReceivedStatus} and data {ReceivedData}",
             receivedStatus.ToString(),
             receivedData ?? "");
         var task = _tasks[taskId];
-        var workerTask = task.WorkerTasks[workerId];
+        var workerTask = task.WorkerTasks[jobId];
         if (workerTask.Status == Status.InProgress)
         {
             workerTask.Status = receivedStatus;
@@ -113,7 +123,7 @@ public class WorkerService
                 Console.WriteLine("Worker returned error code.");
                 break;
             case Status.Ready:
-                if (task.WorkerTasks.All(wt => wt.Status == Status.Ready))
+                if (task.WorkerTasks.Values.All(wt => wt.Status == Status.Ready))
                 {
                     task.Status = Status.Ready;
                 }
@@ -124,36 +134,39 @@ public class WorkerService
         }
     }
 
-    private List<WorkerCrackTask> GetWorkerTasks(string targetHash, uint maxSourceLength, int workerCount)
+    private ConcurrentDictionary<Guid, WorkerCrackTask>
+        GetWorkerTasks(string targetHash, uint maxSourceLength, int workerCount)
     {
-        var possibleSourcesCount = Enumerable
-            .Range(1, (int)maxSourceLength)
-            .Select(idx => _powerTable[idx])
-            .Aggregate(0UL, (a, b) => a + b);
-        var sendCounts = GetSendCounts(possibleSourcesCount, (uint)workerCount);
+        var possibleSourcesCount = GetPossibleSourcesCount(maxSourceLength);
+        var sendCounts = GetSendCounts(possibleSourcesCount, workerCount);
         var offsets = GetOffsets(sendCounts);
-
-        return offsets.Zip(sendCounts).Select(tuple => new WorkerCrackTask
-        {
-            Hash = targetHash,
-            MaxLength = _maxLength,
-            Offset = tuple.First,
-            SendCount = tuple.Second,
-            Alphabet = _alphabet
-        }).Select((task, idx) =>
-        {
-            task.WorkerId = idx;
-            return task;
-        }).ToList();
+        var workerTasks = offsets.Zip(sendCounts)
+            .Select(tuple => new WorkerCrackTask
+            {
+                Hash = targetHash,
+                JobId = NewId.NextGuid(),
+                MaxLength = _maxLength,
+                Offset = (uint)tuple.First,
+                SendCount = (uint)tuple.Second,
+                Alphabet = _alphabet
+            })
+            .Select(t => new KeyValuePair<Guid, WorkerCrackTask>(t.JobId, t));
+        return new ConcurrentDictionary<Guid, WorkerCrackTask>(workerTasks);
     }
 
-    private static List<ulong> GetSendCounts(ulong totalDataCount, uint partsCount)
+    private long GetPossibleSourcesCount(uint maxSourceLength)
+        => Enumerable
+            .Range(1, (int)maxSourceLength)
+            .Select(idx => _powerTable[idx])
+            .Sum();
+
+    private static List<long> GetSendCounts(long totalDataCount, int partsCount)
     {
-        var sendCounts = new List<ulong>();
+        var sendCounts = new List<long>();
         var extraData = totalDataCount % partsCount;
         var commonData = totalDataCount / partsCount;
 
-        for (var i = 0ul; i < extraData; i++)
+        for (var i = 0; i < extraData; i++)
         {
             sendCounts.Add(commonData + 1);
         }
@@ -166,11 +179,11 @@ public class WorkerService
         return sendCounts;
     }
 
-    private static List<ulong> GetOffsets(IList<ulong> sendCounts)
+    private static List<long> GetOffsets(IList<long> sendCounts)
     {
-        var offsets = Enumerable.Repeat(0ul, sendCounts.Count).ToArray();
+        var offsets = Enumerable.Repeat(0L, sendCounts.Count).ToArray();
 
-        ulong cummulativeSum = 0;
+        long cummulativeSum = 0;
         for (var i = 1; i < sendCounts.Count; i++)
         {
             offsets[i] = cummulativeSum + sendCounts[i - 1];

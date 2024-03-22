@@ -48,17 +48,17 @@ public class Worker
                 word,
                 _task.Hash);
 
-            yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.InProgress, word);
+            yield return new WorkerJobResult(job.RequestGuid, _task.JobId, Status.InProgress, word);
         }
 
         _logger.LogInformation("Finished processing hash: {ProcessedHash}", _task.Hash);
 
-        yield return new WorkerJobResult(job.Guid, _task.WorkerId, Status.Ready);
+        yield return new WorkerJobResult(job.RequestGuid, _task.JobId, Status.Ready);
     }
 
     private static WorkerCrackTask JobToTask(WorkerJob job) => new()
     {
-        WorkerId = job.WorkerId,
+        JobId = job.JobId,
         Status = job.Status,
         Hash = job.Hash,
         Offset = job.Offset,
