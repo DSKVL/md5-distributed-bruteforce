@@ -70,8 +70,8 @@ public class Worker
 
     private static string HashToString(byte[] bytes) => string.Concat(bytes.Select(b => b.ToString("X2").ToLower()));
 
-    private void SendMatchedString(string? matchedWord)
-        => _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
+    private async void SendMatchedString(string? matchedWord)
+        => await _managerHttpClient.PatchAsync("/internal/api/manager/hash/crack/request/" + _taskId,
             JsonContent.Create(new CrackWorkerTaskCompletionDto(
                 _task.WorkerId,
                 matchedWord != null ? Status.InProgress : Status.Error,
