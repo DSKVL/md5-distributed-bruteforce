@@ -42,8 +42,7 @@ public class ManagerService
 
     public CrackTask CreateTask(string targetHash, uint maxSourceLength)
     {
-        var workerTasks = GetWorkerTasks(targetHash, maxSourceLength, _workerCount);
-        var task = new CrackTask { WorkerTasks = workerTasks };
+        var task = new CrackTask { WorkerTasks = GetWorkerTasks(targetHash, maxSourceLength, _workerCount) };
         _tasks.Add(task.Id, task);
 
         return task;
@@ -56,8 +55,7 @@ public class ManagerService
     public void UpdateTask(Guid taskId, Guid jobId, Status receivedStatus, string? receivedData)
     {
         _logger.LogInformation("Received result with state {ReceivedStatus} and data {ReceivedData}",
-            receivedStatus.ToString(),
-            receivedData ?? "");
+            receivedStatus.ToString(), receivedData ?? "");
         var task = _tasks[taskId];
         var workerTask = task.WorkerTasks[jobId];
         if (workerTask.Status == Status.InProgress)
@@ -68,30 +66,22 @@ public class ManagerService
         switch (receivedStatus)
         {
             case Status.InProgress:
-                lock (task.HashSources)
-                {
-                    task.HashSources.Add(receivedData!);
-                }
-
+                task.HashSources.Add(receivedData!);
                 break;
             case Status.Error:
                 task.Status = Status.Error;
-                Console.WriteLine("Worker returned error code.");
                 break;
             case Status.Ready:
-                if (task.WorkerTasks.Values.All(wt => wt.Status == Status.Ready))
-                {
-                    task.Status = Status.Ready;
-                }
-
+                task.Status = task.WorkerTasks.Values.All(wt => wt.Status == Status.Ready)
+                    ? Status.Ready
+                    : task.Status;
                 break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(receivedStatus), receivedStatus, null);
+            default: throw new ArgumentOutOfRangeException(nameof(receivedStatus), receivedStatus, null);
         }
     }
 
-    private ConcurrentDictionary<Guid, WorkerCrackTask>
-        GetWorkerTasks(string targetHash, uint maxSourceLength, int workerCount)
+    private ConcurrentDictionary<Guid, WorkerCrackTask> GetWorkerTasks(string targetHash, uint maxSourceLength,
+        int workerCount)
     {
         var possibleSourcesCount = GetPossibleSourcesCount(maxSourceLength);
         var sendCounts = GetSendCounts(possibleSourcesCount, workerCount);

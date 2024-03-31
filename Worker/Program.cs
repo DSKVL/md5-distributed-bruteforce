@@ -26,12 +26,9 @@ builder.Services.AddMassTransit(x =>
     });
     x.SetKebabCaseEndpointNameFormatter();
     x.AddConsumer<WorkerJobConsumer, WorkerJobConsumerDefinition>();
-    x.UsingRabbitMq((context, cfg) =>
-    {
-        cfg.Message<WorkerJob>(c => c.SetEntityName("worker-job"));
-        cfg.Message<WorkerJobResult>(c => c.SetEntityName("worker-result"));
-
-        cfg.ConfigureEndpoints(context);
-    });
+    x.UsingRabbitMq((context, cfg) => cfg.ConfigureEndpoints(context));
 });
+
+EndpointConvention.Map<WorkerJobResult>(new Uri("queue:worker-job-result"));
+
 builder.Build().Run();

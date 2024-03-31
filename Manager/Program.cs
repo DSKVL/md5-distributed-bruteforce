@@ -9,14 +9,13 @@ using MongoDB.Driver;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
-const string databaseName = "HashCrackOutbox";
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ManagerService>();
 builder.Services.AddScoped<IJobSubmitService, JobSubmitService>();
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionString));
 builder.Services.AddSingleton<IMongoDatabase>(provider =>
-    provider.GetRequiredService<IMongoClient>().GetDatabase(databaseName));
+    provider.GetRequiredService<IMongoClient>().GetDatabase("HashCrackOutbox"));
 
 builder.Services.AddMassTransit(x =>
 {
@@ -31,28 +30,17 @@ builder.Services.AddMassTransit(x =>
     });
     x.SetKebabCaseEndpointNameFormatter();
     x.AddConsumer<WorkerResultConsumer, WorkerResultConsumerDefinition>();
-    x.UsingRabbitMq((context, cfg) =>
-    {
-        cfg.Message<WorkerJob>(c => c.SetEntityName("worker-job"));
-        cfg.Message<WorkerJobResult>(c => c.SetEntityName("worker-result"));
-
-        cfg.ReceiveEndpoint("worker-result", e =>
-            e.ConfigureConsumer<WorkerResultConsumer>(context));
-
-        cfg.ConfigureEndpoints(context);
-    });
+    x.UsingRabbitMq((context, cfg) => cfg.ConfigureEndpoints(context));
 });
+
+EndpointConvention.Map<WorkerJob>(new Uri("queue:worker-job"));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 var crackResponseHandler
     = async ([FromServices] IJobSubmitService workerJobService,
@@ -64,8 +52,15 @@ var crackResponseHandler
 var statusResponseHandler
     = ([FromServices] ManagerService workerService, [FromQuery] Guid taskId) =>
     {
-        var (status, data) = workerService.CheckStatus(taskId);
-        return new CrackStatusResponseDto(status, data);
+        try
+        {
+            var (status, data) = workerService.CheckStatus(taskId);
+            return Results.Ok(new CrackStatusResponseDto(status, data));
+        }
+        catch (KeyNotFoundException)
+        {
+            return Results.StatusCode(418);
+        }
     };
 
 app.MapPost("/api/hash/crack", crackResponseHandler)
