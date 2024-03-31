@@ -1,3 +1,4 @@
+using HashCrack.Components;
 using HashCrack.Components.Consumers;
 using HashCrack.Components.Service;
 using HashCrack.Manager.DTO;
@@ -29,9 +30,12 @@ builder.Services.AddMassTransit(x =>
         o.UseBusOutbox();
     });
     x.SetKebabCaseEndpointNameFormatter();
-    x.AddConsumer<WorkerResultConsumer>();
+    x.AddConsumer<WorkerResultConsumer, WorkerResultConsumerDefinition>();
     x.UsingRabbitMq((context, cfg) =>
     {
+        cfg.Message<WorkerJob>(c => c.SetEntityName("worker-job"));
+        cfg.Message<WorkerJobResult>(c => c.SetEntityName("worker-result"));
+
         cfg.ReceiveEndpoint("worker-result", e =>
             e.ConfigureConsumer<WorkerResultConsumer>(context));
 

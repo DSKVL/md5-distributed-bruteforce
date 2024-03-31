@@ -1,3 +1,4 @@
+using HashCrack.Components;
 using HashCrack.Components.Consumers;
 using HashCrack.Components.Service;
 using MassTransit;
@@ -25,6 +26,12 @@ builder.Services.AddMassTransit(x =>
     });
     x.SetKebabCaseEndpointNameFormatter();
     x.AddConsumer<WorkerJobConsumer, WorkerJobConsumerDefinition>();
-    x.UsingRabbitMq((context, cfg) => cfg.ConfigureEndpoints(context));
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Message<WorkerJob>(c => c.SetEntityName("worker-job"));
+        cfg.Message<WorkerJobResult>(c => c.SetEntityName("worker-result"));
+
+        cfg.ConfigureEndpoints(context);
+    });
 });
 builder.Build().Run();
