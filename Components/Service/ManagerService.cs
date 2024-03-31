@@ -1,30 +1,33 @@
-using System.Collections.Concurrent;
 using HashCrack.Components.Model;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MongoDB.Driver;
 
 namespace HashCrack.Components.Service;
 
 public class ManagerService
 {
-    private readonly char[] _alphabet;
+    private readonly string _alphabet;
+    private readonly IMongoCollection<WorkerJob> _jobs;
     private readonly ILogger<ManagerService> _logger;
     private readonly uint _maxLength;
     private readonly long[] _powerTable;
-    private readonly IDictionary<Guid, CrackTask> _tasks = new ConcurrentDictionary<Guid, CrackTask>();
-    private readonly int _timeout;
+    private readonly IMongoCollection<CrackTask> _tasks;
     private readonly int _workerCount;
 
     public ManagerService(
+        IMongoCollection<CrackTask> tasks,
+        IMongoCollection<WorkerJob> jobs,
         ILogger<ManagerService> logger,
         IConfiguration configuration)
     {
+        _tasks = tasks;
+        _jobs = jobs;
         _logger = logger;
         _workerCount = int.Parse(configuration["WORKER_COUNT"] ?? "1");
         _maxLength = uint.Parse(configuration["MaxLength"] ?? "0");
-        _alphabet = (configuration["Alphabet"] ?? "").ToCharArray();
-        _timeout = int.Parse(configuration["Timeout"] ?? "1000");
+        _alphabet = configuration["Alphabet"] ?? "";
         _powerTable = FillPowerTable(_maxLength, (uint)_alphabet.Length);
     }
 
@@ -40,64 +43,126 @@ public class ManagerService
         return powerTable;
     }
 
-    public CrackTask CreateTask(string targetHash, uint maxSourceLength)
+    public async Task<(CrackTask, IEnumerable<WorkerJob>)> CreateTask(string targetHash, uint maxSourceLength)
     {
-        var task = new CrackTask { WorkerTasks = GetWorkerTasks(targetHash, maxSourceLength, _workerCount) };
-        _tasks.Add(task.Id, task);
+        var task = new CrackTask(NewId.NextGuid(), new List<string>());
+        var jobs = GetWorkerJobs(task.Id, targetHash, maxSourceLength, _workerCount).ToList();
+        await _tasks.InsertOneAsync(task);
+        await _jobs.InsertManyAsync(jobs);
 
-        return task;
+        return (task, jobs);
     }
 
     public (Status, string[]) CheckStatus(Guid taskId)
-        => (_tasks[taskId].Status,
-            _tasks[taskId].HashSources.ToArray());
+    {
+        var task = GetTask(taskId);
+        return (task.Status, task.HashSources.ToArray());
+    }
 
-    public void UpdateTask(Guid taskId, Guid jobId, Status receivedStatus, string? receivedData)
+    public void SetTimeout(Guid taskId, int timeout)
+    {
+        Task.Delay(timeout).ContinueWith(async _ =>
+        {
+            var task = GetTask(taskId);
+
+            if (task.Status != Status.Ready)
+            {
+                await UpdateStatus(taskId, Status.Error);
+            }
+
+            _logger.LogInformation("Timeout. Task status is {Status}", task.Status);
+        });
+    }
+
+    public async Task UpdateTask(Guid taskId, Guid jobId, Status receivedStatus, string? receivedData)
     {
         _logger.LogInformation("Received result with state {ReceivedStatus} and data {ReceivedData}",
             receivedStatus.ToString(), receivedData ?? "");
-        var task = _tasks[taskId];
-        var workerTask = task.WorkerTasks[jobId];
+
+        await UpdateWorkTaskStatus(jobId, receivedStatus);
+
+        var updateReadiness = receivedStatus switch
+        {
+            Status.InProgress => UpdateData(taskId, receivedData!),
+            Status.Error => UpdateStatus(taskId, Status.Error),
+            Status.Ready => UpdateTaskReadiness(taskId),
+            _ => throw new ArgumentOutOfRangeException(nameof(receivedStatus), receivedStatus, null)
+        };
+
+        await updateReadiness;
+    }
+
+    private async Task UpdateWorkTaskStatus(Guid jobId, Status newStatus)
+    {
+        var workerTask = await GetJob(jobId);
         if (workerTask.Status == Status.InProgress)
         {
-            workerTask.Status = receivedStatus;
-        }
-
-        switch (receivedStatus)
-        {
-            case Status.InProgress:
-                task.HashSources.Add(receivedData!);
-                break;
-            case Status.Error:
-                task.Status = Status.Error;
-                break;
-            case Status.Ready:
-                task.Status = task.WorkerTasks.Values.All(wt => wt.Status == Status.Ready)
-                    ? Status.Ready
-                    : task.Status;
-                break;
-            default: throw new ArgumentOutOfRangeException(nameof(receivedStatus), receivedStatus, null);
+            var update = Builders<WorkerJob>.Update
+                .Set(job => job.Status, newStatus);
+            await _jobs.UpdateOneAsync(x => x.JobId == jobId, update);
         }
     }
 
-    private ConcurrentDictionary<Guid, WorkerCrackTask> GetWorkerTasks(string targetHash, uint maxSourceLength,
-        int workerCount)
+    private CrackTask GetTask(Guid taskId)
+        => _tasks.FindAsync(Builders<CrackTask>
+                .Filter
+                .Eq(x => x.Id, taskId))
+            .Result.First();
+
+    private async Task<IAsyncCursor<WorkerJob>> GetJobs(Guid taskId)
+        => await _jobs.FindAsync(Builders<WorkerJob>
+            .Filter
+            .Eq(x => x.TaskId, taskId));
+
+    private Task<WorkerJob> GetJob(Guid jobId)
+        => Task.FromResult(_jobs.FindAsync(Builders<WorkerJob>
+                .Filter
+                .Eq(x => x.JobId, jobId))
+            .Result.First());
+
+    private async Task UpdateData(Guid taskId, string data)
+    {
+        var filter = Builders<CrackTask>.Filter
+            .Eq(x => x.Id, taskId);
+        var update = Builders<CrackTask>.Update
+            .AddToSet(restaurant => restaurant.HashSources, data);
+        await _tasks.UpdateOneAsync(filter, update);
+    }
+
+    private async Task UpdateStatus(Guid taskId, Status status)
+    {
+        var filter = Builders<CrackTask>.Filter
+            .Eq(x => x.Id, taskId);
+        var update = Builders<CrackTask>.Update
+            .Set(restaurant => restaurant.Status, status);
+        await _tasks.UpdateOneAsync(filter, update);
+    }
+
+    private async Task UpdateTaskReadiness(Guid taskId)
+    {
+        var jobsCursor = await GetJobs(taskId);
+        var jobs = await jobsCursor.ToListAsync();
+        if (jobs.All(j => j.Status == Status.Ready))
+        {
+            await UpdateStatus(taskId, Status.Ready);
+        }
+    }
+
+    private IEnumerable<WorkerJob> GetWorkerJobs(Guid taskId, string targetHash, uint maxSourceLength, int workerCount)
     {
         var possibleSourcesCount = GetPossibleSourcesCount(maxSourceLength);
         var sendCounts = GetSendCounts(possibleSourcesCount, workerCount);
         var offsets = GetOffsets(sendCounts);
-        var workerTasks = offsets.Zip(sendCounts)
-            .Select(tuple => new WorkerCrackTask
-            {
-                Hash = targetHash,
-                JobId = NewId.NextGuid(),
-                MaxLength = _maxLength,
-                Offset = (uint)tuple.First,
-                SendCount = (uint)tuple.Second,
-                Alphabet = _alphabet
-            })
-            .Select(t => new KeyValuePair<Guid, WorkerCrackTask>(t.JobId, t));
-        return new ConcurrentDictionary<Guid, WorkerCrackTask>(workerTasks);
+        return offsets.Zip(sendCounts)
+            .Select(tuple => new WorkerJob(
+                TaskId: taskId,
+                JobId: NewId.NextGuid(),
+                Hash: targetHash,
+                Offset: (uint)tuple.First,
+                SendCount: (uint)tuple.Second,
+                MaxLength: _maxLength,
+                Alphabet: _alphabet
+            ));
     }
 
     private long GetPossibleSourcesCount(uint maxSourceLength)

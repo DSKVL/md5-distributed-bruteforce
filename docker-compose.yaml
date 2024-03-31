@@ -16,18 +16,12 @@ services:
       - "8080:8080"
     networks:
      - hash-crack-dev
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
   worker:
     build:
       context: .
       dockerfile: Worker.Dockerfile
     networks:
      - hash-crack-dev
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
     deploy:
       mode: replicated
       replicas: 3
@@ -36,6 +30,7 @@ services:
       MANAGER_HOSTNAME: hash-crack-manager
       ASPNETCORE_ENVIRONMENT: Development
   rabbitmq:
+    hostname: "hash-crack-rabbitmq"
     container_name: "hash-crack-rabbitmq"
     image: masstransit/rabbitmq:latest
     ports:
@@ -47,6 +42,8 @@ services:
       interval: 5s
       timeout: 10s
       retries: 10
+    volumes:
+      - "./data:/var/lib/rabbitmq/mnesia/"
     networks:
       - hash-crack-dev
   mongo1:

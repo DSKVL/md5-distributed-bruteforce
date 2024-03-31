@@ -1,6 +1,7 @@
 using HashCrack.Components.Model;
 using MassTransit;
 using MassTransit.MongoDbIntegration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 
@@ -12,64 +13,47 @@ public class JobSubmitService : IJobSubmitService
     private readonly ILogger<JobSubmitService> _logger;
     private readonly ManagerService _managerService;
     private readonly ISendEndpointProvider _sendEndpointProvider;
+    private readonly int _timeout;
 
     public JobSubmitService(
         ManagerService managerService,
         MongoDbContext dbContext,
         ISendEndpointProvider sendEndpointProvider,
-        ILogger<JobSubmitService> logger)
+        ILogger<JobSubmitService> logger,
+        IConfiguration configuration)
     {
         _managerService = managerService;
         _dbContext = dbContext;
         _sendEndpointProvider = sendEndpointProvider;
         _logger = logger;
+        _timeout = int.Parse(configuration["Timeout"] ?? "1000");
     }
 
     public async Task<CrackTask> CreateAndSubmitJobs(string targetHash, uint maxSourceLength)
     {
-        var crackTask = _managerService.CreateTask(targetHash, maxSourceLength);
-
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await _dbContext.BeginTransaction(cts.Token);
 
-        foreach (var (_, workerCrackTask) in crackTask.WorkerTasks)
+        var (task, jobs) = await _managerService.CreateTask(targetHash, maxSourceLength);
+
+        foreach (var job in jobs)
         {
             _logger.LogInformation("Send job request with task offset {TaskOffset} and count {SendCount}",
-                workerCrackTask.Offset, workerCrackTask.SendCount);
+                job.Offset, job.SendCount);
 
-            await _sendEndpointProvider.Send(new WorkerJob(
-                crackTask.Id.ToString(),
-                workerCrackTask.JobId,
-                workerCrackTask.Hash,
-                workerCrackTask.Offset,
-                workerCrackTask.SendCount,
-                workerCrackTask.MaxLength,
-                string.Concat(workerCrackTask.Alphabet)), cts.Token);
+            await _sendEndpointProvider.Send(job, cts.Token);
         }
 
-        //SetTimeout(task, _timeout);
         try
         {
             await _dbContext.CommitTransaction(cts.Token);
+            _managerService.SetTimeout(task.Id, _timeout);
         }
         catch (MongoCommandException exception) when (exception.CodeName == "DuplicateKey")
         {
             throw new Exception("Duplicate registration", exception);
         }
 
-        return crackTask;
-    }
-
-    private void SetTimeout(CrackTask task, int timeout)
-    {
-        Task.Delay(timeout).ContinueWith(_ =>
-        {
-            if (task.Status != Status.Ready)
-            {
-                task.Status = Status.Error;
-            }
-
-            _logger.LogInformation("Timeout. Task status is {Status}", task.Status);
-        });
+        return task;
     }
 }

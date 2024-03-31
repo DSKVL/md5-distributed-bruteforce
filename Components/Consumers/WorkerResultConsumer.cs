@@ -1,11 +1,7 @@
+using HashCrack.Components.Model;
 using MassTransit;
 
 namespace HashCrack.Components.Consumers;
-
-public interface ISecondBus :
-    IBus
-{
-}
 
 public class WorkerResultConsumer : IConsumer<WorkerJobResult>
 {
@@ -16,14 +12,13 @@ public class WorkerResultConsumer : IConsumer<WorkerJobResult>
         _managerService = managerService;
     }
 
-    public Task Consume(ConsumeContext<WorkerJobResult> context)
+    public async Task Consume(ConsumeContext<WorkerJobResult> context)
     {
         var message = context.Message;
-        _managerService.UpdateTask(
-            Guid.Parse(message.Guid),
+        await _managerService.UpdateTask(
+            message.Guid,
             message.JobId,
             message.Status,
             message.Data);
-        return Task.CompletedTask;
     }
 }

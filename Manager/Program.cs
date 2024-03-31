@@ -1,5 +1,6 @@
 using HashCrack.Components;
 using HashCrack.Components.Consumers;
+using HashCrack.Components.Model;
 using HashCrack.Components.Service;
 using HashCrack.Manager.DTO;
 using MassTransit;
@@ -15,7 +16,9 @@ builder.Services.AddSingleton<ManagerService>();
 builder.Services.AddScoped<IJobSubmitService, JobSubmitService>();
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionString));
 builder.Services.AddSingleton<IMongoDatabase>(provider =>
-    provider.GetRequiredService<IMongoClient>().GetDatabase("HashCrackOutbox"));
+    provider.GetRequiredService<IMongoClient>().GetDatabase("HashCrack"));
+builder.Services.AddMongoDbCollection<CrackTask>(x => x.Id);
+builder.Services.AddMongoDbCollection<WorkerJob>(x => x.JobId);
 
 builder.Services.AddMassTransit(x =>
 {
@@ -42,15 +45,15 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-var crackResponseHandler
-    = async ([FromServices] IJobSubmitService workerJobService,
+app.MapPost("/api/hash/crack", async ([FromServices] IJobSubmitService workerJobService,
         [FromBody] HashCrackRequestDto request) =>
     {
         var task = await workerJobService.CreateAndSubmitJobs(request.Hash, request.MaxLength);
         return new HashCrackResponseDto(task.Id.ToString());
-    };
-var statusResponseHandler
-    = ([FromServices] ManagerService workerService, [FromQuery] Guid taskId) =>
+    })
+    .WithName("CrackRequest")
+    .WithOpenApi();
+app.MapGet("/api/hash/status", ([FromServices] ManagerService workerService, [FromQuery] Guid taskId) =>
     {
         try
         {
@@ -61,12 +64,7 @@ var statusResponseHandler
         {
             return Results.StatusCode(418);
         }
-    };
-
-app.MapPost("/api/hash/crack", crackResponseHandler)
-    .WithName("CrackRequest")
-    .WithOpenApi();
-app.MapGet("/api/hash/status", statusResponseHandler)
+    })
     .WithName("CrackStatus")
     .WithOpenApi();
 

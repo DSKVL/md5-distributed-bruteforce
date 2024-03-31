@@ -1,3 +1,4 @@
+using HashCrack.Components.Model;
 using MassTransit;
 
 namespace HashCrack.Components.Consumers;
