@@ -1,10 +1,11 @@
 using System.Linq.Expressions;
 using MassTransit.MongoDbIntegration.Saga;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 
-namespace HashCrack.Manager;
+namespace HashCrack.Components;
 
 public static class DependencyConfigurationExtensions
 {
@@ -14,6 +15,9 @@ public static class DependencyConfigurationExtensions
     {
         IMongoCollection<T> MongoDbCollectionFactory(IServiceProvider provider)
         {
+            var database = provider.GetRequiredService<IMongoDatabase>();
+            var collectionNameFormatter = DotCaseCollectionNameFormatter.Instance;
+
             if (!BsonClassMap.IsClassMapRegistered(typeof(T)))
             {
                 BsonClassMap.RegisterClassMap(new BsonClassMap<T>(cfg =>
@@ -22,9 +26,6 @@ public static class DependencyConfigurationExtensions
                     cfg.MapIdProperty(idPropertyExpression);
                 }));
             }
-
-            var database = provider.GetRequiredService<IMongoDatabase>();
-            var collectionNameFormatter = DotCaseCollectionNameFormatter.Instance;
 
             return database.GetCollection<T>(collectionNameFormatter.Collection<T>());
         }

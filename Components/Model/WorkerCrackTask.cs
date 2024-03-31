@@ -1,4 +1,4 @@
-namespace HashCrack.Contracts.Model;
+namespace HashCrack.Components.Model;
 
 public class WorkerCrackTask
 {

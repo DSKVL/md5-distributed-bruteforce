@@ -5,9 +5,9 @@ networks:
 services:
   manager:
     container_name: hash-crack-manager
-    build: 
+    build:
       context: .
-      dockerfile: Manager/Dockerfile
+      dockerfile: Manager.Dockerfile
     environment:
       WORKER_HOSTNAME_PREFIX: md5-distributed-bruteforce-worker-
       WORKER_COUNT: 3
@@ -22,7 +22,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Worker/Dockerfile
+      dockerfile: Worker.Dockerfile
     networks:
      - hash-crack-dev
     depends_on:
@@ -52,30 +52,32 @@ services:
   mongo1:
     container_name: mongo1
     image: mongo
-    volumes:
-      - ./rs-init.sh:/scripts/rs-init.sh
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo1:27017',priority:3},{_id:1,host:'mongo2:27017',priority:2},{_id:2,host:'mongo3:27017',priority:1}]}) }" | mongosh --port 27017
+      interval: 5s
+      timeout: 20s
+      retries: 20
     networks:
       - hash-crack-dev
     ports:
-      - 27017:27017
-      - 27021:27017
+      - "27017:27017"
     links:
       - mongo2
       - mongo3
-    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "dbrs" ]
+    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "rs0" ]
   mongo2:
     container_name: mongo2
     image: mongo
     networks:
       - hash-crack-dev
     ports:
-       - 27022:27017
-    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "dbrs" ]
+      - "27022:27017"
+    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "rs0" ]
   mongo3:
     container_name: mongo3
     image: mongo
     networks:
       - hash-crack-dev
     ports:
-        - 27023:27017
-    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "dbrs" ]
+      - "27023:27017"
+    entrypoint: [ "/usr/bin/mongod", "--bind_ip_all", "--replSet", "rs0" ]

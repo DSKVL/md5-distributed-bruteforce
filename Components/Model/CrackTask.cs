@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
-using HashCrack.Contracts;
-using HashCrack.Contracts.Model;
 
-namespace HashCrack.Manager.Model;
+namespace HashCrack.Components.Model;
 
 public class CrackTask
 {

@@ -1,4 +1,4 @@
-namespace HashCrack.Contracts;
+namespace HashCrack.Components;
 
 public record WorkerJobResult(
     string Guid,

@@ -1,13 +1,13 @@
 using System.Security.Cryptography;
 using Combinatorics.Collections;
-using HashCrack.Contracts;
-using HashCrack.Contracts.Model;
+using HashCrack.Components.Model;
+using Microsoft.Extensions.Logging;
 
-namespace HashCrack.Worker.Service;
+namespace HashCrack.Components.Service;
 
-public class Worker
+public class WorkerService
 {
-    private readonly ILogger<Worker> _logger;
+    private readonly ILogger<WorkerService> _logger;
 
     private WorkerCrackTask _task = new()
     {
@@ -15,7 +15,7 @@ public class Worker
         Alphabet = Array.Empty<char>()
     };
 
-    public Worker(ILogger<Worker> logger)
+    public WorkerService(ILogger<WorkerService> logger)
     {
         _logger = logger;
     }
@@ -59,7 +59,6 @@ public class Worker
     private static WorkerCrackTask JobToTask(WorkerJob job) => new()
     {
         JobId = job.JobId,
-        Status = job.Status,
         Hash = job.Hash,
         Offset = job.Offset,
         SendCount = job.SendCount,

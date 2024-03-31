@@ -1,23 +1,23 @@
 using System.Collections.Concurrent;
-using HashCrack.Contracts;
-using HashCrack.Contracts.Model;
-using HashCrack.Manager.Model;
+using HashCrack.Components.Model;
 using MassTransit;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
-namespace HashCrack.Manager.Service;
+namespace HashCrack.Components.Service;
 
-public class WorkerService
+public class ManagerService
 {
     private readonly char[] _alphabet;
-    private readonly ILogger<WorkerService> _logger;
+    private readonly ILogger<ManagerService> _logger;
     private readonly uint _maxLength;
     private readonly long[] _powerTable;
     private readonly IDictionary<Guid, CrackTask> _tasks = new ConcurrentDictionary<Guid, CrackTask>();
     private readonly int _timeout;
     private readonly int _workerCount;
 
-    public WorkerService(
-        ILogger<WorkerService> logger,
+    public ManagerService(
+        ILogger<ManagerService> logger,
         IConfiguration configuration)
     {
         _logger = logger;
@@ -40,57 +40,13 @@ public class WorkerService
         return powerTable;
     }
 
-    public async Task<string> CreateTask(string targetHash, uint maxSourceLength,
-        ISendEndpointProvider sendEndpointProvider)
+    public CrackTask CreateTask(string targetHash, uint maxSourceLength)
     {
         var workerTasks = GetWorkerTasks(targetHash, maxSourceLength, _workerCount);
         var task = new CrackTask { WorkerTasks = workerTasks };
         _tasks.Add(task.Id, task);
-        var sendEndpoint = await sendEndpointProvider.GetSendEndpoint(new Uri("queue:worker-job"));
 
-        //Транзакция на 3 джобы, чтобы не утекли кусочки задания
-
-        foreach (var (_, workerCrackTask) in workerTasks)
-        {
-            _logger.LogInformation("Send job request with task offset {TaskOffset} and count {SendCount}",
-                workerCrackTask.Offset,
-                workerCrackTask.SendCount);
-
-            await sendEndpoint.Send(new WorkerJob(
-                task.Id.ToString(),
-                workerCrackTask.JobId,
-                workerCrackTask.Status,
-                workerCrackTask.Hash,
-                workerCrackTask.Offset,
-                workerCrackTask.SendCount,
-                workerCrackTask.MaxLength,
-                string.Concat(workerCrackTask.Alphabet)));
-        }
-
-        SetTimeout(task, _timeout);
-
-        return task.Id.ToString();
-    }
-
-    private void SubmitJob(WorkerCrackTask task)
-    {
-        //Лог
-        //БД
-        //Лог
-        //Send
-    }
-
-    private void SetTimeout(CrackTask task, int timeout)
-    {
-        Task.Delay(timeout).ContinueWith(_ =>
-        {
-            if (task.Status != Status.Ready)
-            {
-                task.Status = Status.Error;
-            }
-
-            _logger.LogInformation("Timeout. Task status is {Status}", task.Status);
-        });
+        return task;
     }
 
     public (Status, string[]) CheckStatus(Guid taskId)
