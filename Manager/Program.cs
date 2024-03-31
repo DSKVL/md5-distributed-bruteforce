@@ -1,70 +1,66 @@
-using HashCrack.Contracts;
-using HashCrack.Manager.Consumers;
+using HashCrack.Components;
+using HashCrack.Components.Consumers;
+using HashCrack.Components.Service;
 using HashCrack.Manager.DTO;
-using HashCrack.Manager.Service;
 using MassTransit;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+var connectionString = builder.Configuration.GetConnectionString("Default");
 
 builder.Services.AddHttpClient();
-builder.Services.AddSingleton<WorkerService>();
-
-// var connectionString = builder.Configuration.GetConnectionString("Default");
-// const string databaseName = "HashCrackOutbox";
-
-// builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionString));
-// builder.Services.AddSingleton<IMongoDatabase>(provider => provider.GetRequiredService<IMongoClient>().GetDatabase(databaseName));
-// builder.Services.AddMongoDbCollection<Registration>(x => x.RegistrationId);
+builder.Services.AddSingleton<ManagerService>();
+builder.Services.AddScoped<IJobSubmitService, JobSubmitService>();
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionString));
+builder.Services.AddSingleton<IMongoDatabase>(provider =>
+    provider.GetRequiredService<IMongoClient>().GetDatabase("HashCrackOutbox"));
 
 builder.Services.AddMassTransit(x =>
 {
-    x.AddConsumer<WorkerResultConsumer>();
-    x.SetKebabCaseEndpointNameFormatter();
-    x.UsingRabbitMq((context, cfg) =>
+    x.AddMongoDbOutbox(o =>
     {
-        cfg.Message<WorkerJob>(c => c.SetEntityName("worker-job"));
-        cfg.Message<WorkerJobResult>(c => c.SetEntityName("worker-result"));
+        o.QueryDelay = TimeSpan.FromSeconds(1);
+        o.ClientFactory(provider => provider.GetRequiredService<IMongoClient>());
+        o.DatabaseFactory(provider => provider.GetRequiredService<IMongoDatabase>());
+        o.DuplicateDetectionWindow = TimeSpan.FromSeconds(30);
 
-        cfg.ReceiveEndpoint("worker-result", e =>
-            e.ConfigureConsumer<WorkerResultConsumer>(context));
-
-        cfg.ConfigureEndpoints(context);
+        o.UseBusOutbox();
     });
-
-    // x.AddMongoDbOutbox(o =>
-    // {
-    //     o.DisableInboxCleanupService();
-    //     o.ClientFactory(provider => provider.GetRequiredService<IMongoClient>());
-    //     o.DatabaseFactory(provider => provider.GetRequiredService<IMongoDatabase>());
-    //
-    //     o.UseBusOutbox(bo => bo.DisableDeliveryService());
-    // });
+    x.SetKebabCaseEndpointNameFormatter();
+    x.AddConsumer<WorkerResultConsumer, WorkerResultConsumerDefinition>();
+    x.UsingRabbitMq((context, cfg) => cfg.ConfigureEndpoints(context));
 });
 
-var app = builder.Build();
+EndpointConvention.Map<WorkerJob>(new Uri("queue:worker-job"));
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+app.UseSwagger();
+app.UseSwaggerUI();
 
 var crackResponseHandler
-    = async ([FromServices] WorkerService workerService,
-        [FromServices] ISendEndpointProvider clientProvider,
+    = async ([FromServices] IJobSubmitService workerJobService,
         [FromBody] HashCrackRequestDto request) =>
     {
-        var taskId = await workerService.CreateTask(request.Hash, request.MaxLength, clientProvider);
-        return new HashCrackResponseDto(taskId);
+        var task = await workerJobService.CreateAndSubmitJobs(request.Hash, request.MaxLength);
+        return new HashCrackResponseDto(task.Id.ToString());
     };
 var statusResponseHandler
-    = ([FromServices] WorkerService workerService, [FromQuery] Guid taskId) =>
+    = ([FromServices] ManagerService workerService, [FromQuery] Guid taskId) =>
     {
-        var (status, data) = workerService.CheckStatus(taskId);
-        return new CrackStatusResponseDto(status, data);
+        try
+        {
+            var (status, data) = workerService.CheckStatus(taskId);
+            return Results.Ok(new CrackStatusResponseDto(status, data));
+        }
+        catch (KeyNotFoundException)
+        {
+            return Results.StatusCode(418);
+        }
     };
 
 app.MapPost("/api/hash/crack", crackResponseHandler)

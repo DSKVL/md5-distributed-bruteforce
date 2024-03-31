@@ -1,8 +1,8 @@
-namespace HashCrack.Contracts.Model;
+namespace HashCrack.Components.Model;
 
 public class WorkerCrackTask
 {
-    public int WorkerId { get; set; }
+    public Guid JobId { get; set; }
     public Status Status { get; set; } = Status.InProgress;
     public string? Hash { get; init; }
     public ulong Offset { get; init; }

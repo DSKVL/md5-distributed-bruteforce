@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using HashCrack.Contracts;
+using HashCrack.Components;
 
 namespace HashCrack.Manager.DTO;
 
