@@ -1,5 +1,5 @@
-using HashCrack.Components;
 using HashCrack.Components.Consumers;
+using HashCrack.Components.Model;
 using HashCrack.Components.Service;
 using MassTransit;
 using MongoDB.Driver;
@@ -14,7 +14,6 @@ builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionStrin
 builder.Services.AddSingleton<IMongoDatabase>(provider =>
     provider.GetRequiredService<IMongoClient>().GetDatabase("HashCrackOutbox"));
 
-var timeout = int.Parse(builder.Configuration["Timeout"] ?? "10000");
 builder.Services.AddMassTransit(x =>
 {
     x.AddMongoDbOutbox(o =>
